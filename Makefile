@@ -162,6 +162,10 @@ timer: rebuild
 	$(CC) $(CFLAGS) -o $(BUILD_APP_DIR)/timer.o app/timer.c
 	@$(MAKE) --no-print-directory link
 
+xtea_test: rebuild
+	$(CC) $(CFLAGS) -o $(BUILD_APP_DIR)/xtea_test.o app/xtea_test.c
+	@$(MAKE) --no-print-directory link
+
 # clean and rebuild rules
 rebuild:
 	find '$(BUILD_APP_DIR)' -type f -name '*.o' -delete
