@@ -29,36 +29,64 @@ void encrypt()
 
 }
 
+void hextostr(char *dest, const char *src) {
+    static unsigned char const val[(unsigned char)-1+1] = {
+        ['0'] =  0+1, ['1'] =  1+1, ['2'] =  2+1, ['3'] =  3+1, ['4'] =  4+1,
+        ['5'] =  5+1, ['6'] =  6+1, ['7'] =  7+1, ['8'] =  8+1, ['9'] =  9+1,
+        ['a'] = 10+1, ['b'] = 11+1, ['c'] = 12+1, ['d'] = 13+1, ['e'] = 14+1, ['f'] = 15+1,
+        ['A'] = 10+1, ['B'] = 11+1, ['C'] = 12+1, ['D'] = 13+1, ['E'] = 14+1, ['F'] = 15+1,
+    };
+    const unsigned char *p = (const unsigned char *)src;
+    while (val[p[0]] && val[p[1]]) {
+        *dest++ = (char)(val[p[0]] * 16 + val[p[1]] - 17);
+        p += 2;
+    }
+    *dest = '\0';
+}
+
 void string2hexString(char* input, char* output)
 {
-    int loop;
-    int i;
-
-    i = 0;
-    loop = 0;
-
-    while (input[loop] != '\0') {
-        sprintf((char*)(output + i), "%02X", input[loop]);
-        loop += 1;
-        i += 2;
-    }
-    //insert NULL at the end of the output string
-    output[i++] = '\0';
+	while(*input) {
+		*output = (*input >> 4) & 0xf;
+		if(*output < 10) {
+			*output += 48;
+		}else{
+			*output += 65;
+		}
+		output++;
+		*output = *input & 0xf;
+		if(*output < 10) {
+			*output += 48;
+		}else{
+			*output += 65;
+		}
+		output++;
+		input++;
+	}
 }
 
 void task0(void)
 {
-    uint8_t message[] = "the quick brown fox jumps over the lazy dog";
+    char message[] = "the quick brown fox jumps over the lazy dog";
 	
 	while (1) {
 		/* write pipe - write size must be less than buffer size */
-		ucx_pipe_write(encrypt_pipe, message, strlen(message));
+		//ucx_pipe_write(encrypt_pipe, message, strlen(message));
+		printf("original message: %s\n", message);
+		char *hex = (uint8_t)malloc(sizeof(message)*2);
+		string2hexString(message, hex);
+		printf("hexified: %s\n", hex);
+		char *backToASCII = (uint8_t)malloc(sizeof(message));
+		hextostr(backToASCII, hex);
+		printf("back to ascii: %s\n", backToASCII);
+		free(hex);
+		free(backToASCII);
 	}
 }
 
 int32_t app_main(void)
 {
-	ucx_task_add(encrypt, DEFAULT_STACK_SIZE);
+	//ucx_task_add(encrypt, DEFAULT_STACK_SIZE);
 	ucx_task_add(task0, DEFAULT_STACK_SIZE);
 
 	encrypt_pipe = ucx_pipe_create(128);		/* pipe buffer, 128 bytes (allocated on the heap) */
