@@ -4,8 +4,11 @@ void xtea_encrypt(uint32_t v[2], const uint32_t key[4], uint32_t num_rounds);
 void xtea_decrypt(uint32_t v[2], const uint32_t key[4], uint32_t num_rounds);
 void xtea_cbc_encrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t key[4], const uint32_t iv[2]);
 void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t key[4], const uint32_t iv[2]);
+void build_enc_request(char* msg, char*buf);
+void build_dec_request(char* msg, char*buf);
+void build_res_request(char* msg, char*buf);
 
-struct pipe_s *encrypt_pipe, *decrypt_pipe;
+struct pipe_s *encrypt_pipe, *decrypt_pipe, *result_pipe;
 
 void encrypt()
 {
@@ -16,14 +19,25 @@ void encrypt()
         while (ucx_pipe_size(encrypt_pipe) < 1);
 
 	    ucx_pipe_read(encrypt_pipe, message, ucx_pipe_size(encrypt_pipe));
+		hextostr(message, message);
 	    printf("message: %s\n", message);
 
 	    uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
 	    uint32_t iv[2] = {0x11223344, 0x55667788};
+		
         xtea_cbc_encrypt(message, message, sizeof(message), xtea_key, iv);
-	    printf("\nencoded message (CBC mode): %s\n", message);
-	    xtea_cbc_decrypt(message, message, sizeof(message), xtea_key, iv);
-	    printf("\ndecoded message (CBC mode): %s\n", message);
+	    //printf("\nencoded message (CBC mode): %s\n", message);
+		string2hexString(message, message);
+		char *aux = (char *)malloc(sizeof(message) + 10);
+		sprintf(aux,"res ");
+		strcat(aux, message);
+		strcat(aux, " end");
+		ucx_pipe_write(result_pipe, message, strlen(message));
+		free(aux);
+		free(message);
+	    //xtea_cbc_decrypt(message, message, sizeof(message), xtea_key, iv);
+	    //printf("\ndecoded message (CBC mode): %s\n", message);
+		
 
     }
 
@@ -51,47 +65,64 @@ void string2hexString(char* input, char* output)
 		if(*output < 10) {
 			*output += 48;
 		}else{
-			*output += 65;
+			*output += 87;
 		}
 		output++;
 		*output = *input & 0xf;
 		if(*output < 10) {
 			*output += 48;
 		}else{
-			*output += 65;
+			*output += 87;
 		}
 		output++;
 		input++;
 	}
+	*output = '\0';
 }
 
 void task0(void)
 {
     char message[] = "the quick brown fox jumps over the lazy dog";
-	
+	char encryptedMessage = (char *)malloc(sizeof(message)*2 + 10);
 	while (1) {
 		/* write pipe - write size must be less than buffer size */
-		//ucx_pipe_write(encrypt_pipe, message, strlen(message));
-		printf("original message: %s\n", message);
-		char *hex = (uint8_t)malloc(sizeof(message)*2);
-		string2hexString(message, hex);
-		printf("hexified: %s\n", hex);
-		char *backToASCII = (uint8_t)malloc(sizeof(message));
-		hextostr(backToASCII, hex);
-		printf("back to ascii: %s\n", backToASCII);
-		free(hex);
-		free(backToASCII);
+		char *hexifiedMsgAux = (char *)malloc(sizeof(message)*2 + 10);
+		string2hexString(message, hexifiedMsgAux);
+		char *hexifiedMsg = (char *)malloc(sizeof(message)*2 + 10);
+		sprintf(hexifiedMsg,"enc ");
+		strcat(hexifiedMsg, hexifiedMsgAux);
+		strcat(hexifiedMsg, " end");
+		ucx_pipe_write(encrypt_pipe, hexifiedMsg, strlen(hexifiedMsg));
+	    ucx_pipe_read(result_pipe, encryptedMessage, ucx_pipe_size(result_pipe));
+		printf("resultado: %s", encryptedMessage);
+		free(hexifiedMsg);
+		free(hexifiedMsgAux);
+		
+
+
+		//printf("original message: %s\n", message);
+		//char *hex = (char *)malloc(sizeof(message)*2);
+		//printf("%08x malloc()\n", hex);
+		//string2hexString(message, hex);
+		//printf("hexified: %s\n", hex);
+		//char *backToASCII = (char *)malloc(sizeof(message));
+		//hextostr(backToASCII, hex);
+		//printf("back to ascii: %s\n", backToASCII);
+		//free(hex);
+		//free(hexifiedMsg);
+		//free(enc);
+		//free(backToASCII);
 	}
 }
 
 int32_t app_main(void)
 {
-	//ucx_task_add(encrypt, DEFAULT_STACK_SIZE);
+	ucx_task_add(encrypt, DEFAULT_STACK_SIZE);
 	ucx_task_add(task0, DEFAULT_STACK_SIZE);
 
 	encrypt_pipe = ucx_pipe_create(128);		/* pipe buffer, 128 bytes (allocated on the heap) */
 	decrypt_pipe = ucx_pipe_create(128);		/* pipe buffer, 64 bytes */
-
+	result_pipe = ucx_pipe_create(128);
 	// start UCX/OS, preemptive mode
 	return 1;
 }
