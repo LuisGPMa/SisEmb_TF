@@ -7,26 +7,38 @@ void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 void build_enc_request(char* msg, char*buf);
 void build_dec_request(char* msg, char*buf);
 void build_res_request(char* msg, char*buf);
+char** str_split(char* a_str, const char a_delim);
 
 struct pipe_s *encrypt_pipe, *decrypt_pipe, *result_pipe;
 
 void encrypt()
 {
 	uint8_t message[128];
+	uint8_t msg_to_encrypt[128];
+	uint8_t encrypted_msg[128];
+	uint8_t ascii_to_pipe[128];
+
+	char *str;
 
     for (;;) {
         memset(message, 0, sizeof(message));
+        memset(msg_to_encrypt, 0, sizeof(msg_to_encrypt));
         while (ucx_pipe_size(encrypt_pipe) < 1);
 
 	    ucx_pipe_read(encrypt_pipe, message, ucx_pipe_size(encrypt_pipe));
-		hextostr(message, message);
-	    printf("message: %s\n", message);
+		printf("depois do pipe: %s\n", message);
+
+		str = strtok(message, " ");
+		str = strtok(NULL, " ");
+		hextoascii(msg_to_encrypt, str);
+	    printf("message: %s\n", msg_to_encrypt);
 
 	    uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
 	    uint32_t iv[2] = {0x11223344, 0x55667788};
 		
-        xtea_cbc_encrypt(message, message, sizeof(message), xtea_key, iv);
-	    //printf("\nencoded message (CBC mode): %s\n", message);
+        xtea_cbc_encrypt(encrypted_msg, msg_to_encrypt, sizeof(msg_to_encrypt), xtea_key, iv);
+	    printf("\nencoded message (CBC mode): %s\n", encrypted_msg);
+		//transformar o encrypted_msg de volta para hex
 		string2hexString(message, message);
 		char *aux = (char *)malloc(sizeof(message) + 10);
 		sprintf(aux,"res ");
@@ -41,6 +53,25 @@ void encrypt()
 
     }
 
+}
+
+void hextoascii(char *dest, char *src) {
+	char tmp;
+	while (*src) {
+		if (*src<58) {
+			tmp = (*src - 48) << 4;
+		}else {
+			tmp = (*src - 87) << 4;
+		}
+		if (*++src < 58) {
+			tmp |= (*src - 48);
+		}else {
+			tmp |= (*src - 87);
+		}
+		src++;
+		*dest++ = tmp;
+	}
+	*dest = '\0';
 }
 
 void hextostr(char *dest, const char *src) {
@@ -92,9 +123,13 @@ void task0(void)
 		sprintf(hexifiedMsg,"enc ");
 		strcat(hexifiedMsg, hexifiedMsgAux);
 		strcat(hexifiedMsg, " end");
+		printf("antes do pipe: %s\n", hexifiedMsg);
 		ucx_pipe_write(encrypt_pipe, hexifiedMsg, strlen(hexifiedMsg));
+		
+        while (ucx_pipe_size(result_pipe) < 1);
+
 	    ucx_pipe_read(result_pipe, encryptedMessage, ucx_pipe_size(result_pipe));
-		printf("resultado: %s", encryptedMessage);
+		printf("resultado: %s\n", encryptedMessage);
 		free(hexifiedMsg);
 		free(hexifiedMsgAux);
 		
@@ -217,4 +252,52 @@ void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 		block[1] ^= tiv[1];
 		memcpy(out, (char *)block, BLOCKLEN - rem);
 	}
+}
+
+char** str_split(char* a_str, const char a_delim)
+{
+    char** result    = 0;
+    size_t count     = 0;
+    char* tmp        = a_str;
+    char* last_comma = 0;
+    char delim[2];
+    delim[0] = a_delim;
+    delim[1] = 0;
+
+    /* Count how many elements will be extracted. */
+    while (*tmp)
+    {
+        if (a_delim == *tmp)
+        {
+            count++;
+            last_comma = tmp;
+        }
+        tmp++;
+    }
+
+    /* Add space for trailing token. */
+    count += last_comma < (a_str + strlen(a_str) - 1);
+
+    /* Add space for terminating null string so caller
+       knows where the list of returned strings ends. */
+    count++;
+
+    result = malloc(sizeof(char*) * count);
+
+    if (result)
+    {
+        size_t idx  = 0;
+        char* token = strtok(a_str, delim);
+
+        while (token)
+        {
+            assert(idx < count);
+            *(result + idx++) = strdup(token);
+            token = strtok(0, delim);
+        }
+        assert(idx == count - 1);
+        *(result + idx) = 0;
+    }
+
+    return result;
 }
