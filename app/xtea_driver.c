@@ -13,67 +13,44 @@ struct pipe_s *request_pipe, *decrypt_pipe, *result_pipe;
 void req_handler()
 {
 	uint8_t message[128];
-	char res_buf[128];
-	char *str;
+	char enc_res_buf[128];
+	char dec_res_buf[128];
+	char *str = (char *)malloc(128);
+	//char *msg_buf_ecb = (char *)malloc(200);
 
     for (;;) {
         memset(message, 0, sizeof(message));
-        while (ucx_pipe_size(request_pipe) < 1);
+        memset(enc_res_buf, 0, sizeof(enc_res_buf));
+        memset(dec_res_buf, 0, sizeof(dec_res_buf));
 
+        while (ucx_pipe_size(request_pipe) < 1);
+		_delay_ms(2);
 	    ucx_pipe_read(request_pipe, message, ucx_pipe_size(request_pipe));
-		printf("depois do pipe: %s\n", message);
+		printf("XTEA DRIVER :: request received %s\n", message);
 
 		str = strtok(message, " ");
 		if(strcmp(str, "enc")==0) {
-			printf("encrypt\n");
+			printf("XTEA DRIVER :: encrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			printf("messageInAscii: %s\n", message);
-			encrypt(message, res_buf);
-			printf("res_buf: %s, len: %d\n", res_buf, strlen(res_buf));
+			encrypt_cbc(message, enc_res_buf);
+			//encrypt_ecb(message);
+			printf("XTEA DRIVER :: writing to res pipe\n");
 			//ucx_task_suspend(1);
-			ucx_pipe_write(result_pipe, res_buf, strlen(res_buf));
+			ucx_pipe_write(result_pipe, enc_res_buf, strlen(enc_res_buf));
 			//ucx_task_resume(1);
 			
 		}else if(strcmp(str, "dec")==0) {
-			printf("decrypt\n");
+			printf("XTEA DRIVER :: decrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			//printf("Encrypted message InAscii: %s\n", message);
-			//decrypt(message, res_buf);
-			printf("res_buf: %s, len: %d\n", res_buf, strlen(res_buf));
+			decrypt_cbc(message, dec_res_buf);
 			//ucx_task_suspend(1);
-			ucx_pipe_write(result_pipe, res_buf, strlen(res_buf));
+			printf("XTEA DRIVER :: writing to res pipe\n");
+			ucx_pipe_write(result_pipe, dec_res_buf, strlen(dec_res_buf));
 			//ucx_task_resume(1);
 
 		}
-		//hextoascii(msg_to_encrypt, str);
-	    //printf("message: %s\n", msg_to_encrypt);
-//
-	    //uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
-	    //uint32_t iv[2] = {0x11223344, 0x55667788};
-		//
-        //xtea_cbc_encrypt(encrypted_msg, msg_to_encrypt, sizeof(msg_to_encrypt), xtea_key, iv);
-	    //printf("\nencoded message (CBC mode): %s\n", encrypted_msg);
-		//string2hexString(encrypted_msg, message);
-		////transformar o encrypted_msg de volta para hex
-		//char *aux = (char *)malloc(sizeof(encrypted_msg)*2 + 10);
-	    //printf("\nencoded message in hex: %s\n", message);
-		//sprintf(aux,"res ");
-		//strcat(aux, message);
-		//strcat(aux, " end");
-	    //printf("\nencoded message in hex + res end: %s\n", message);
-
-		//ucx_pipe_write(result_pipe, message, strlen(message));
-		//free(aux);
-		//free(message);
-		//free(str);
-		//free(res_buf);
-		//free(msg_to_encrypt);
-	    //xtea_cbc_decrypt(message, message, sizeof(message), xtea_key, iv);
-	    //printf("\ndecoded message (CBC mode): %s\n", message);
-		
-
     }
 }
 
@@ -86,26 +63,25 @@ void task0(void)
 	char *dec_request = (char *)malloc(200);
 	char *hexifiedMsgAux = (char *)malloc(200);
 	char *hexifiedMsg = (char *)malloc(200);
-
+	char *decInAscii = (char *)malloc(200);
 	while (1) {
 		/* write pipe - write size must be less than buffer size */
+		printf("TASK 0 :: message to encrypt: %s\n", message);
 		string2hexString(message, hexifiedMsgAux);
 		sprintf(hexifiedMsg,"enc ");
 		strcat(hexifiedMsg, hexifiedMsgAux);
 		strcat(hexifiedMsg, " end");
-		printf("antes do pipe: %s\n", hexifiedMsg);
+		printf("TASK 0 :: pipe write %s\n", hexifiedMsg);
 		ucx_pipe_write(request_pipe, hexifiedMsg, strlen(hexifiedMsg));
 		
 		//for (;;);
         while (ucx_pipe_size(result_pipe) < 1);
 		_delay_ms(2);
 	    ucx_pipe_read(result_pipe, encryptedMessage, ucx_pipe_size(result_pipe));
+		printf("TASK 0 :: pipe read %s\n", encryptedMessage);
 
 		encryptedMessage = strtok(encryptedMessage, " ");
 		encryptedMessage = strtok(NULL, " ");
-		printf("resultado: %s\n", encryptedMessage);
-
-		printf("resultado len(): %d\n", strlen(encryptedMessage));
 
 		hextoascii(resInAscii, encryptedMessage);
 
@@ -114,34 +90,63 @@ void task0(void)
 		strcat(dec_request, encryptedMessage);
 		strcat(dec_request, " end");
 
-		printf("dec request: %s\n", dec_request);
+		printf("TASK 0 :: pipe write %s\n", dec_request);
 
 		ucx_pipe_write(request_pipe, dec_request, strlen(dec_request));
 
+		while (ucx_pipe_size(result_pipe) < 1);
+		_delay_ms(2);
+
+	    ucx_pipe_read(result_pipe, decryptedMessage, ucx_pipe_size(result_pipe));
+		printf("TASK 0 :: pipe read %s\n", encryptedMessage);
+
+
+		decryptedMessage = strtok(decryptedMessage, " ");
+		decryptedMessage = strtok(NULL, " ");
+		hextoascii(decInAscii, decryptedMessage);
+		printf("TASK 0 :: decrypted message: %s\n", decInAscii);
 		//free(hexifiedMsg);
 		//free(hexifiedMsgAux);
 		//free(encryptedMessage);
 	}
 }
 
-//void decrypt(char *encrypted_msg_in, char *decrypted_msg_out)
-//{
-//	char *aux = (char *)malloc(128);
-//	strcpy(aux, encrypted_msg_in);
-//	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
-//	uint32_t iv[2] = {0x11223344, 0x55667788};
-//	
-//    xtea_cbc_decrypt(decrypted_msg_out, encrypted_msg_in, strlen(encrypted_msg_in), xtea_key, iv);
-//
-//	string2hexString(msgCopy, msg); //encrypted to hex
-//	sprintf(enc_msg,"res "); //add response tokens
-//	strcat(enc_msg, msg);
-//	strcat(enc_msg, " end");
-//	//printf("encrypt func: %d\n", enc_msg);
-//	free(msgCopy);
-//}
+void encrypt_ecb(uint8_t *message)
+{
+	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+	int32_t i;
+	
+	for (i = 0; i < 8; i++)
+	 	xtea_encrypt((uint32_t *)(message + i * 8), xtea_key, 32);
+	
+	
+}
 
-void encrypt(char *msg, char *enc_msg)
+void decrypt_ecb(uint8_t *enc_msg)
+{
+	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+	int32_t i;
+	for (i = 0; i < 8; i++)
+		xtea_decrypt((uint32_t *)(enc_msg + i * 8), xtea_key, 32);
+	
+}
+
+void decrypt_cbc(char *encrypted_msg_in, char *decrypted_msg_out)
+{
+	char aux[128];
+	strcpy(aux, encrypted_msg_in);
+	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+	uint32_t iv[2] = {0x11223344, 0x55667788};
+    xtea_cbc_decrypt(aux, encrypted_msg_in, strlen(encrypted_msg_in), xtea_key, iv);
+	//printf("decrypt result: %s\n", aux);
+	string2hexString(aux, encrypted_msg_in); //encrypted to hex
+	sprintf(decrypted_msg_out,"res "); //add response tokens
+	strcat(decrypted_msg_out, encrypted_msg_in);
+	strcat(decrypted_msg_out, " end");
+	//printf("dencrypt func: %d\n", decrypted_msg_out);
+}
+
+void encrypt_cbc(char *msg, char *enc_msg)
 {
 	char *msgCopy = (char *)malloc(sizeof(msg));
 	strcpy(msgCopy, msg);
@@ -218,8 +223,8 @@ void string2hexString(char* input, char* output)
 
 int32_t app_main(void)
 {
-	ucx_task_add(req_handler, DEFAULT_STACK_SIZE);
-	ucx_task_add(task0, DEFAULT_STACK_SIZE);
+	ucx_task_add(req_handler, DEFAULT_STACK_SIZE*2);
+	ucx_task_add(task0, DEFAULT_STACK_SIZE*2);
 
 	request_pipe = ucx_pipe_create(256);		/* pipe buffer, 128 bytes (allocated on the heap) */
 	decrypt_pipe = ucx_pipe_create(256);		/* pipe buffer, 64 bytes */
@@ -319,3 +324,4 @@ void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 		memcpy(out, (char *)block, BLOCKLEN - rem);
 	}
 }
+

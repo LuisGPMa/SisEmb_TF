@@ -162,8 +162,8 @@ timer: rebuild
 	$(CC) $(CFLAGS) -o $(BUILD_APP_DIR)/timer.o app/timer.c
 	@$(MAKE) --no-print-directory link
 
-xtea_test: rebuild
-	$(CC) $(CFLAGS) -o $(BUILD_APP_DIR)/xtea_test.o app/xtea_test.c
+xtea_driver: rebuild
+	$(CC) $(CFLAGS) -w -o $(BUILD_APP_DIR)/xtea_driver.o app/xtea_driver.c
 	@$(MAKE) --no-print-directory link
 
 # clean and rebuild rules
