@@ -1,5 +1,24 @@
 #include <ucx.h>
 //#include <assert.h>
+#define S0_BASE				0xe1000000
+#define TIMER_BASE			(S0_BASE + 0x20000)
+#define TIMER0				(*(volatile uint32_t *)(TIMER_BASE + 0x4000))
+#define XTEA_BASE			0xe7000000
+#define XTEA_CONTROL			(*(volatile uint32_t *)(XTEA_BASE + 0x000))
+#define XTEA_KEY0			(*(volatile uint32_t *)(XTEA_BASE + 0x010))
+#define XTEA_KEY1			(*(volatile uint32_t *)(XTEA_BASE + 0x020))
+#define XTEA_KEY2			(*(volatile uint32_t *)(XTEA_BASE + 0x030))
+#define XTEA_KEY3			(*(volatile uint32_t *)(XTEA_BASE + 0x040))
+#define XTEA_IN0			(*(volatile uint32_t *)(XTEA_BASE + 0x050))
+#define XTEA_IN1			(*(volatile uint32_t *)(XTEA_BASE + 0x060))
+#define XTEA_OUT0			(*(volatile uint32_t *)(XTEA_BASE + 0x070))
+#define XTEA_OUT1			(*(volatile uint32_t *)(XTEA_BASE + 0x080))
+#define XTEA_START			(1 << 0)
+#define XTEA_ENCRYPT			(1 << 1)
+#define XTEA_DECRYPT			(0 << 1)
+#define XTEA_READY			(1 << 2)
+const uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+
 void xtea_encrypt(uint32_t v[2], const uint32_t key[4], uint32_t num_rounds);
 void xtea_decrypt(uint32_t v[2], const uint32_t key[4], uint32_t num_rounds);
 void xtea_cbc_encrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t key[4], const uint32_t iv[2]);
@@ -33,8 +52,9 @@ void req_handler()
 			printf("XTEA DRIVER :: encrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			encrypt_cbc(message, enc_res_buf);
-			//encrypt_ecb(message);
+			//encrypt_cbc(message, enc_res_buf);
+			encrypt_ecb(message, enc_res_buf);
+			//printf("ecb enc: %s\n", message);
 			printf("XTEA DRIVER :: writing to res pipe\n");
 			//ucx_task_suspend(1);
 			ucx_pipe_write(result_pipe, enc_res_buf, strlen(enc_res_buf));
@@ -44,7 +64,9 @@ void req_handler()
 			printf("XTEA DRIVER :: decrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			decrypt_cbc(message, dec_res_buf);
+			decrypt_ecb(message, dec_res_buf);
+			//printf("ecb dec: %s\n", message);
+			//decrypt_cbc(message, dec_res_buf);
 			//ucx_task_suspend(1);
 			printf("XTEA DRIVER :: writing to res pipe\n");
 			ucx_pipe_write(result_pipe, dec_res_buf, strlen(dec_res_buf));
@@ -111,23 +133,79 @@ void task0(void)
 	}
 }
 
-void encrypt_ecb(uint8_t *message)
+void encrypt_hw(uint32_t msg[2], uint32_t xtea_key[4])
 {
-	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
-	int32_t i;
-	
-	for (i = 0; i < 8; i++)
-	 	xtea_encrypt((uint32_t *)(message + i * 8), xtea_key, 32);
-	
-	
+	XTEA_KEY0 = xtea_key[0];
+	XTEA_KEY1 = xtea_key[1];
+	XTEA_KEY2 = xtea_key[2];
+	XTEA_KEY3 = xtea_key[3];
+	XTEA_CONTROL = XTEA_ENCRYPT;
+
+	XTEA_IN0 = msg[0];
+	XTEA_IN1 = msg[1];
+	XTEA_CONTROL |= XTEA_START;
+	while (!(XTEA_CONTROL & XTEA_READY));
+	XTEA_CONTROL &= ~XTEA_START;
+
+	msg[0] = XTEA_OUT0;
+	msg[1] = XTEA_OUT1;
 }
 
-void decrypt_ecb(uint8_t *enc_msg)
+void decrypt_hw(uint32_t msg[2], uint32_t xtea_key[4])
 {
-	uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+
+	XTEA_KEY0 = xtea_key[0];
+	XTEA_KEY1 = xtea_key[1];
+	XTEA_KEY2 = xtea_key[2];
+	XTEA_KEY3 = xtea_key[3];
+
+	XTEA_CONTROL = XTEA_DECRYPT;
+
+	XTEA_IN0 = msg[0];
+	XTEA_IN1 = msg[1];
+	XTEA_CONTROL |= XTEA_START;
+	while (!(XTEA_CONTROL & XTEA_READY));
+	XTEA_CONTROL &= ~XTEA_START;
+
+	msg[0] = XTEA_OUT0;
+	msg[1] = XTEA_OUT1;
+}
+
+void encrypt_ecb(uint8_t *message, uint8_t *enc_msg_out)
+{
+	char *msgCopy = (char *)malloc(sizeof(message));
+	strcpy(msgCopy, message);
+	//uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
 	int32_t i;
-	for (i = 0; i < 8; i++)
-		xtea_decrypt((uint32_t *)(enc_msg + i * 8), xtea_key, 32);
+	
+	for (i = 0; i < 8; i++){
+	 	encrypt_hw(32, (uint32_t *)(msgCopy + i * 8));
+	
+	}
+	string2hexString(msgCopy, message); //encrypted to hex
+	sprintf(enc_msg_out,"res "); //add response tokens
+	strcat(enc_msg_out, message);
+	strcat(enc_msg_out, " end");
+	printf("ecb usando hw enc: %s\n", enc_msg_out);
+	free(msgCopy);
+}
+
+void decrypt_ecb(uint8_t *enc_msg_in, uint8_t *dec_msg_out)
+{
+	char *msgCopy = (char *)malloc(sizeof(enc_msg_in));
+	strcpy(msgCopy, enc_msg_in);
+
+	//uint32_t xtea_key[4] = {0xf0e1d2c3, 0xb4a59687, 0x78695a4b, 0x3c2d1e0f};
+	int32_t i;
+	for (i = 0; i < 8; i++){
+		decrypt_hw(32, (uint32_t *)(msgCopy + i * 8));
+	}
+	string2hexString(msgCopy, enc_msg_in); //encrypted to hex
+	sprintf(dec_msg_out,"res "); //add response tokens
+	strcat(dec_msg_out, enc_msg_in);
+	strcat(dec_msg_out, " end");
+	printf("ecb usando hw dec: %s\n", dec_msg_out);
+	free(msgCopy);
 	
 }
 
@@ -288,7 +366,8 @@ void xtea_cbc_encrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 		memset((char *)block + rem, 0, BLOCKLEN - rem);
 		block[0] ^= tiv[0];
 		block[1] ^= tiv[1];
-		xtea_encrypt(block, key, 32);
+		encrypt_hw(32, block);
+		//xtea_encrypt(block, key, 32);
 		memcpy(out, (char *)block, BLOCKLEN - rem);
 	}
 }
@@ -304,7 +383,8 @@ void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 		memcpy((char *)block, in, BLOCKLEN);
 		block2[0] = block[0];
 		block2[1] = block[1];
-		xtea_decrypt(block, key, 32);
+		//xtea_decrypt(block, key, 32);
+		decrypt_hw();
 		block[0] ^= tiv[0];
 		block[1] ^= tiv[1];
 		tiv[0] = block2[0];
@@ -318,7 +398,8 @@ void xtea_cbc_decrypt(uint8_t *out, uint8_t *in, uint32_t len, const uint32_t ke
 		memset((char *)block + rem, 0, BLOCKLEN - rem);
 		tiv[0] = block[0];
 		tiv[1] = block[1];
-		xtea_decrypt(block, key, 32);
+		decrypt_hw(32, block);
+		//xtea_decrypt(block, key, 32);
 		block[0] ^= tiv[0];
 		block[1] ^= tiv[1];
 		memcpy(out, (char *)block, BLOCKLEN - rem);
