@@ -48,9 +48,9 @@ void req_handler()
 			printf("XTEA DRIVER :: encrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			//encrypt_cbc(message, enc_res_buf);
-			encrypt_ecb(message, enc_res_buf);
-			printf("ecb enc: %s\n", message);
+			encrypt_cbc(message, enc_res_buf);
+			//encrypt_ecb(message, enc_res_buf);
+			//printf("ecb enc: %s\n", message);
 			printf("XTEA DRIVER :: writing to res pipe\n");
 			//ucx_task_suspend(1);
 			ucx_pipe_write(result_pipe, enc_res_buf, strlen(enc_res_buf));
@@ -60,9 +60,9 @@ void req_handler()
 			printf("XTEA DRIVER :: decrypting...\n");
 			str = strtok(NULL, " ");
 			hextoascii(message, str);
-			decrypt_ecb(message, dec_res_buf);
-			printf("ecb dec: %s\n", message);
-			//decrypt_cbc(message, dec_res_buf);
+			//decrypt_ecb(message, dec_res_buf);
+			//printf("ecb dec: %s\n", message);
+			decrypt_cbc(message, dec_res_buf);
 			//ucx_task_suspend(1);
 			printf("XTEA DRIVER :: writing to res pipe\n");
 			ucx_pipe_write(result_pipe, dec_res_buf, strlen(dec_res_buf));
@@ -74,8 +74,8 @@ void req_handler()
 
 void task0(void)
 {
-    char message[] = "the quick brown fox jumps over the lazy dog";
-	char message1[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
+    //char message[] = "the quick brown fox jumps over the lazy dog";
+	char message[] = "Lorem ipsum dolor sit amet, consectetur adipiscing elit.";
 	char *decryptedMessage = (char *)malloc(200);
 	char *encryptedMessage = (char *)malloc(200);
 	char *resInAscii = (char *)malloc(200);
